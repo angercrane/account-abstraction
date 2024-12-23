@@ -1,7 +1,9 @@
 import { ethers } from 'hardhat'
+import { toHex } from 'hardhat/internal/util/bigint'
 import {
   arrayify,
-  hexConcat, hexDataSlice,
+  hexConcat,
+  hexDataSlice,
   hexlify,
   hexZeroPad,
   Interface,
@@ -20,6 +22,7 @@ import {
   TestAggregatedAccountFactory, TestPaymasterRevertCustomError__factory, TestERC20__factory
 } from '../typechain'
 import { BytesLike, Hexable } from '@ethersproject/bytes'
+import { JsonRpcProvider } from '@ethersproject/providers'
 import { expect } from 'chai'
 import { Create2Factory } from '../src/Create2Factory'
 import { debugTransaction } from './debugTx'
@@ -223,8 +226,8 @@ export async function checkForGeth (): Promise<void> {
   // --allow-insecure-unlock
   if (currentNode.match(/geth/i) != null) {
     for (let i = 0; i < 2; i++) {
-      const acc = await provider.request({ method: 'personal_newAccount', params: ['pass'] }).catch(rethrow)
-      await provider.request({ method: 'personal_unlockAccount', params: [acc, 'pass'] }).catch(rethrow)
+      const acc = await provider.request({ method: 'personal_newAccount', params: ['pass'] }).catch(rethrow())
+      await provider.request({ method: 'personal_unlockAccount', params: [acc, 'pass'] }).catch(rethrow())
       await fund(acc, '10')
     }
   }
@@ -298,7 +301,11 @@ export async function createAccount (
   }> {
   const accountFactory = _factory ?? await new SimpleAccountFactory__factory(ethersSigner).deploy(entryPoint)
   const implementation = await accountFactory.accountImplementation()
-  await accountFactory.createAccount(accountOwner, 0)
+  const entryPointContract = EntryPoint__factory.connect(entryPoint, ethersSigner)
+  const senderCreator = await entryPointContract.senderCreator()
+  await (ethersSigner.provider as JsonRpcProvider).send('hardhat_setBalance', [senderCreator, toHex(100e18)])
+  const senderCreatorSigner = await ethers.getImpersonatedSigner(senderCreator)
+  await accountFactory.connect(senderCreatorSigner).createAccount(accountOwner, 0)
   const accountAddress = await accountFactory.getAddress(accountOwner, 0)
   const proxy = SimpleAccount__factory.connect(accountAddress, ethersSigner)
   return {

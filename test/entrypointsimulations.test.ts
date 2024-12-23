@@ -235,6 +235,7 @@ describe('EntryPointSimulations', function () {
       const { proxy: account } = await createAccount(ethersSigner, await accountOwner.getAddress(), entryPoint.address)
       const sender = createAddress()
       const op1 = await fillSignAndPack({
+        verificationGasLimit: 150000, // providing default value as gas estimation will fail
         initCode: hexConcat([
           account.address,
           account.interface.encodeFunctionData('execute', [sender, 0, '0x'])

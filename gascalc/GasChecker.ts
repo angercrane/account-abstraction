@@ -93,6 +93,7 @@ export class GasChecker {
   accountOwner: Wallet
 
   accountInterface: SimpleAccountInterface
+  private locked: boolean
 
   constructor () {
     this.accountOwner = createAccountOwner()
@@ -139,24 +140,26 @@ export class GasChecker {
       const addr = await fact.getAddress(this.accountOwner.address, salt)
 
       if (!this.createdAccounts.has(addr)) {
-        // explicit call to fillUseROp with no "entryPoint", to make sure we manually fill everything and
-        // not attempt to fill from blockchain.
-        const op = signUserOp(await fillUserOp({
-          sender: addr,
-          nonce: 0,
-          callGasLimit: 30000,
-          verificationGasLimit: 1000000,
-          // paymasterAndData: paymaster,
-          preVerificationGas: 1,
-          maxFeePerGas: 0
-        }), this.accountOwner, this.entryPoint().address, await provider.getNetwork().then(net => net.chainId))
-        creationOps.push(packUserOp(op))
+        const codeSize = await provider.getCode(addr).then(code => code.length)
+        if (codeSize === 2) {
+          // explicit call to fillUseROp with no "entryPoint", to make sure we manually fill everything and
+          // not attempt to fill from blockchain.
+          const op = signUserOp(await fillUserOp({
+            sender: addr,
+            initCode: this.accountInitCode(fact, salt),
+            nonce: 0,
+            callGasLimit: 30000,
+            verificationGasLimit: 1000000,
+            // paymasterAndData: paymaster,
+            preVerificationGas: 1,
+            maxFeePerGas: 0
+          }), this.accountOwner, this.entryPoint().address, await provider.getNetwork().then(net => net.chainId))
+          creationOps.push(packUserOp(op))
+        }
         this.createdAccounts.add(addr)
       }
 
       this.accounts[addr] = this.accountOwner
-      // deploy if not already deployed.
-      await fact.createAccount(this.accountOwner.address, salt)
       const accountBalance = await GasCheckCollector.inst.entryPoint.balanceOf(addr)
       if (accountBalance.lte(minDepositOrBalance)) {
         await GasCheckCollector.inst.entryPoint.depositTo(addr, { value: minDepositOrBalance.mul(5) })
@@ -224,21 +227,30 @@ export class GasChecker {
         }
         // console.debug('== account est=', accountEst.toString())
         accountEst = est.accountEst
-        const op = await fillSignAndPack({
-          sender: account,
-          callData: accountExecFromEntryPoint,
-          maxPriorityFeePerGas: info.gasPrice,
-          maxFeePerGas: info.gasPrice,
-          callGasLimit: accountEst,
-          verificationGasLimit: 1000000,
-          paymaster: paymaster,
-          paymasterVerificationGasLimit: 50000,
-          paymasterPostOpGasLimit: 50000,
-          preVerificationGas: 1
-        }, accountOwner, GasCheckCollector.inst.entryPoint)
-        // const packed = packUserOp(op, false)
-        // console.log('== packed cost=', callDataCost(packed), packed)
-        return op
+        while (this.locked) {
+          await new Promise(resolve => setTimeout(resolve, 1))
+        }
+        try {
+          this.locked = true
+
+          const op = await fillSignAndPack({
+            sender: account,
+            callData: accountExecFromEntryPoint,
+            maxPriorityFeePerGas: info.gasPrice,
+            maxFeePerGas: info.gasPrice,
+            callGasLimit: accountEst,
+            verificationGasLimit: 1000000,
+            paymaster: paymaster,
+            paymasterVerificationGasLimit: 50000,
+            paymasterPostOpGasLimit: 50000,
+            preVerificationGas: 1
+          }, accountOwner, GasCheckCollector.inst.entryPoint)
+          // const packed = packUserOp(op, false)
+          // console.log('== packed cost=', callDataCost(packed), packed)
+          return op
+        } finally {
+          this.locked = false
+        }
       }))
 
     const txdata = GasCheckCollector.inst.entryPoint.interface.encodeFunctionData('handleOps', [userOps, info.beneficiary])
@@ -254,6 +266,13 @@ export class GasChecker {
       throw e
     })
     const ret = await GasCheckCollector.inst.entryPoint.handleOps(userOps, info.beneficiary, { gasLimit: gasEst.mul(3).div(2) })
+    // "ret.wait()" is dead slow without it...
+    for (let count = 0; count < 100; count++) {
+      if (await provider.getTransactionReceipt(ret.hash) != null) {
+        break
+      }
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
     const rcpt = await ret.wait()
     const gasUsed = rcpt.gasUsed.toNumber()
     const countSuccessOps = rcpt.events?.filter(e => e.event === 'UserOperationEvent' && e.args?.success).length
