@@ -224,13 +224,13 @@ export async function checkForGeth (): Promise<void> {
   // NOTE: must run geth with params:
   // --http.api personal,eth,net,web3
   // --allow-insecure-unlock
-  if (currentNode.match(/geth/i) != null) {
-    for (let i = 0; i < 2; i++) {
-      const acc = await provider.request({ method: 'personal_newAccount', params: ['pass'] }).catch(rethrow())
-      await provider.request({ method: 'personal_unlockAccount', params: [acc, 'pass'] }).catch(rethrow())
-      await fund(acc, '10')
-    }
-  }
+  // if (currentNode.match(/geth/i) != null) {
+  //   for (let i = 0; i < 2; i++) {
+  //     const acc = await provider.request({ method: 'personal_newAccount', params: ['pass'] }).catch(rethrow())
+  //     await provider.request({ method: 'personal_unlockAccount', params: [acc, 'pass'] }).catch(rethrow())
+  //     await fund(acc, '10')
+  //   }
+  // }
 }
 
 // remove "array" members, convert values to strings.

@@ -33,9 +33,6 @@ jobs:
 
   gas-checks:
     runs-on: ubuntu-latest
-    services:
-      localgeth:
-        image: dtr22/geth-dev
 
     steps:
       - uses: actions/setup-node@v1

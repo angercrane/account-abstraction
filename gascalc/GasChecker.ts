@@ -3,7 +3,6 @@ import '../test/aa.init'
 import { defaultAbiCoder, hexConcat, parseEther } from 'ethers/lib/utils'
 import {
   AddressZero,
-  checkForGeth,
   createAddress,
   createAccountOwner,
   deployEntryPoint, decodeRevertReason
@@ -27,7 +26,8 @@ const gasCheckerLogFile = './reports/gas-checker.txt'
 
 const ethers = hre.ethers
 const provider = hre.ethers.provider
-let ethersSigner = provider.getSigner()
+const junkWallet = Wallet.fromMnemonic('test test test test test test test test test test test junk')
+const globalSigner = new Wallet(junkWallet.privateKey, provider)
 let lastGasUsed: number
 
 const minDepositOrBalance = parseEther('0.1')
@@ -130,7 +130,7 @@ export class GasChecker {
         defaultAbiCoder.encode(['address'], [this.entryPoint().address])
       ]), 0, 2885201)
     console.log('factaddr', factoryAddress)
-    const fact = SimpleAccountFactory__factory.connect(factoryAddress, ethersSigner)
+    const fact = SimpleAccountFactory__factory.connect(factoryAddress, globalSigner)
     // create accounts
     const creationOps: PackedUserOperation[] = []
     for (const n of range(count)) {
@@ -165,7 +165,7 @@ export class GasChecker {
         await GasCheckCollector.inst.entryPoint.depositTo(addr, { value: minDepositOrBalance.mul(5) })
       }
     }
-    await this.entryPoint().handleOps(creationOps, ethersSigner.getAddress())
+    await this.entryPoint().handleOps(creationOps, globalSigner.getAddress())
   }
 
   /**
@@ -206,7 +206,7 @@ export class GasChecker {
           const destBalance = await getBalance(dest)
           if (destBalance.eq(0)) {
             console.log('dest replenish', dest)
-            await ethersSigner.sendTransaction({ to: dest, value: 1 })
+            await globalSigner.sendTransaction({ to: dest, value: 1 })
           }
         }
         const accountExecFromEntryPoint = this.accountExec(dest, destValue, destCallData)
@@ -335,20 +335,13 @@ export class GasCheckCollector {
   }
 
   async _init (entryPointAddressOrTest: string = 'test'): Promise<this> {
-    console.log('signer=', await ethersSigner.getAddress())
+    console.log('signer=', await globalSigner.getAddress())
     DefaultGasTestInfo.beneficiary = createAddress()
-
-    const bal = await getBalance(ethersSigner.getAddress())
-    if (bal.gt(parseEther('100000000'))) {
-      console.log('DONT use geth miner.. use account 2 instead')
-      await checkForGeth()
-      ethersSigner = ethers.provider.getSigner(2)
-    }
 
     if (entryPointAddressOrTest === 'test') {
       this.entryPoint = await deployEntryPoint(provider)
     } else {
-      this.entryPoint = EntryPoint__factory.connect(entryPointAddressOrTest, ethersSigner)
+      this.entryPoint = EntryPoint__factory.connect(entryPointAddressOrTest, globalSigner)
     }
 
     const tableHeaders = [
