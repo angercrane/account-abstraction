@@ -30,6 +30,19 @@ import {
   TestSignatureAggregator__factory,
   TestWarmColdAccount__factory
 } from '../typechain'
+import { DefaultsForUserOp, fillAndSign, fillSignAndPack, getUserOpHash, packUserOp, simulateValidation } from './UserOp'
+import { PackedUserOperation, UserOperation } from './UserOperation'
+import { PopulatedTransaction } from 'ethers/lib/ethers'
+import { ethers } from 'hardhat'
+import { arrayify, defaultAbiCoder, hexZeroPad, parseEther } from 'ethers/lib/utils'
+import { debugTransaction } from './debugTx'
+import { BytesLike } from '@ethersproject/bytes'
+import { toChecksumAddress } from 'ethereumjs-util'
+import { getERC165InterfaceID } from '../src/Utils'
+import { UserOperationEventEvent } from '../typechain/contracts/interfaces/IEntryPoint'
+import { before } from 'mocha'
+
+import Debug from 'debug'
 import {
   AddressZero,
   calcGasUsage,
@@ -53,25 +66,6 @@ import {
   TWO_ETH,
   unpackAccountGasFees
 } from './testutils'
-import {
-  DefaultsForUserOp,
-  fillAndSign,
-  fillSignAndPack,
-  getUserOpHash,
-  packUserOp,
-  simulateValidation
-} from './UserOp'
-import { PackedUserOperation, UserOperation } from './UserOperation'
-import { PopulatedTransaction } from 'ethers/lib/ethers'
-import { ethers } from 'hardhat'
-import { arrayify, defaultAbiCoder, hexZeroPad, parseEther } from 'ethers/lib/utils'
-import { debugTransaction } from './debugTx'
-import { BytesLike } from '@ethersproject/bytes'
-import { toChecksumAddress } from 'ethereumjs-util'
-import { getERC165InterfaceID } from '../src/Utils'
-import { UserOperationEventEvent } from '../typechain/contracts/interfaces/IEntryPoint'
-
-import Debug from 'debug'
 
 const debug = Debug('entrypoint.test')
 
@@ -558,7 +552,9 @@ describe('EntryPoint', function () {
           const rcpt = await entryPoint.handleOps([packUserOp(await createUserOpWithGas(minVerGas, minPmVerGas - 1, minCallGas))],
             beneficiary)
             .then(async r => r.wait())
-            .catch((e: Error) => { throw new Error(decodeRevertReason(e, false) as any) })
+            .catch((e: Error) => {
+              throw new Error(decodeRevertReason(e, false) as any)
+            })
           expect(rcpt.events?.map(ev => ev.event)).to.eql([
             'BeforeExecution',
             'PostOpRevertReason',
@@ -1436,7 +1432,6 @@ describe('EntryPoint', function () {
             sender: testExpiryAccount.address
           }, expiredOwner, entryPoint)
           const ret = await simulateValidation(userOp, entryPoint.address)
-          // console.log(ret.returnInfo.accountValidationData.toHexString())
           const validationData = parseValidationData(ret.returnInfo.accountValidationData)
           expect(validationData.validUntil).eql(now - 60)
           expect(validationData.validAfter).to.eql(123)

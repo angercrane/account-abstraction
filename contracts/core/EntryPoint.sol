@@ -14,6 +14,7 @@ import "./NonceManager.sol";
 import "./SenderCreator.sol";
 import "./StakeManager.sol";
 import "./UserOperationLib.sol";
+import "./Eip7702Support.sol";
 
 import "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
@@ -381,8 +382,9 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager, ReentrancyGuardT
     function getUserOpHash(
         PackedUserOperation calldata userOp
     ) public view returns (bytes32) {
+        bytes32 overrideInitCodeHash = Eip7702Support._getEip7702InitCodeHashOverride(userOp);
         return
-            MessageHashUtils.toTypedDataHash(getDomainSeparatorV4(), userOp.hash());
+            MessageHashUtils.toTypedDataHash(getDomainSeparatorV4(), userOp.hash(overrideInitCodeHash));
     }
 
     /**
@@ -444,6 +446,13 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager, ReentrancyGuardT
     ) internal {
         if (initCode.length != 0) {
             address sender = opInfo.mUserOp.sender;
+            if ( Eip7702Support._isEip7702InitCode(initCode) ) {
+                if (initCode.length>20 ) {
+                    //already validated it is an EIP-7702 delegate (and hence, already has code)
+                    senderCreator().initEip7702Sender(sender, initCode[20:]);
+                }
+                return;
+            }
             if (sender.code.length != 0)
                 revert FailedOp(opIndex, "AA10 sender already constructed");
             address sender1 = senderCreator().createSender{
