@@ -58,7 +58,7 @@ describe('Simple7702Account.sol', function () {
 
     it('should fail call from another account', async () => {
       const wallet1 = Simple7702Account__factory.connect(eoa.address, geth.provider.getSigner())
-      await expect(wallet1.execute([])).to.revertedWith('not from self or EntryPoint')
+      await expect(wallet1.executeBatch([])).to.revertedWith('not from self or EntryPoint')
     })
 
     it('should succeed sending a batch', async () => {
@@ -69,7 +69,7 @@ describe('Simple7702Account.sol', function () {
       const addr1 = createAddress()
       const addr2 = createAddress()
 
-      await wallet2.execute([{
+      await wallet2.executeBatch([{
         target: addr1, value: 1, data: '0x'
       }, {
         target: addr2, value: 2, data: '0x'
@@ -83,11 +83,7 @@ describe('Simple7702Account.sol', function () {
     const addr1 = createAddress()
     const eoa = createAccountOwner(geth.provider)
 
-    const callData = eip7702delegate.interface.encodeFunctionData('execute', [[{
-      target: addr1,
-      value: 1,
-      data: '0x'
-    }]])
+    const callData = eip7702delegate.interface.encodeFunctionData('execute', [addr1, 1, '0x'])
     const userop = await fillAndSign({
       sender: eoa.address,
       initCode: INITCODE_EIP7702_MARKER,
@@ -118,11 +114,7 @@ describe('Simple7702Account.sol', function () {
     const eoa = createAccountOwner(geth.provider)
     const paymaster = await new TestPaymasterAcceptAll__factory(geth.provider.getSigner()).deploy(entryPoint.address)
     await paymaster.deposit({ value: parseEther('1') })
-    const callData = eip7702delegate.interface.encodeFunctionData('execute', [[{
-      target: addr1,
-      value: 1,
-      data: '0x'
-    }]])
+    const callData = eip7702delegate.interface.encodeFunctionData('execute', [addr1, 1, '0x'])
     const userop = await fillAndSign({
       sender: eoa.address,
       paymaster: paymaster.address,

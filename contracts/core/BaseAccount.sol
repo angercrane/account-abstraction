@@ -3,9 +3,11 @@ pragma solidity ^0.8.23;
 
 /* solhint-disable avoid-low-level-calls */
 /* solhint-disable no-empty-blocks */
+/* solhint-disable no-inline-assembly */
 
 import "../interfaces/IAccount.sol";
 import "../interfaces/IEntryPoint.sol";
+import "../utils/Exec.sol";
 import "./UserOperationLib.sol";
 
 /**
@@ -15,6 +17,14 @@ import "./UserOperationLib.sol";
  */
 abstract contract BaseAccount is IAccount {
     using UserOperationLib for PackedUserOperation;
+
+    struct Call {
+        address target;
+        uint256 value;
+        bytes data;
+    }
+
+    error ExecuteError(uint256 index, bytes error);
 
     /**
      * Return the account nonce.
@@ -30,6 +40,40 @@ abstract contract BaseAccount is IAccount {
      * Subclass should return the current entryPoint used by this account.
      */
     function entryPoint() public view virtual returns (IEntryPoint);
+
+    /**
+     * execute a single call from the account.
+     */
+    function execute(address target, uint256 value, bytes calldata data) virtual external {
+        _requireForExecute();
+
+        bool ok = Exec.call(target, value, data, gasleft());
+        if (!ok) {
+            Exec.revertWithReturnData();
+        }
+    }
+
+    /**
+     * execute a batch of calls.
+     * revert on the first call that fails.
+     * If the batch reverts, and it contains more than a single call, then wrap the revert with ExecuteError,
+     *  to mark the failing call index.
+     */
+    function executeBatch(Call[] calldata calls) external {
+        _requireForExecute();
+
+        for (uint256 i = 0; i < calls.length; i++) {
+            Call calldata call = calls[i];
+            bool ok = Exec.call(call.target, call.value, call.data, gasleft());
+            if (!ok) {
+                if (calls.length == 1) {
+                    Exec.revertWithReturnData();
+                } else {
+                    revert ExecuteError(i, Exec.getReturnData(0));
+                }
+            }
+        }
+    }
 
     /// @inheritdoc IAccount
     function validateUserOp(
@@ -51,6 +95,10 @@ abstract contract BaseAccount is IAccount {
             msg.sender == address(entryPoint()),
             "account: not from EntryPoint"
         );
+    }
+
+    function _requireForExecute() internal view virtual {
+        _requireFromEntryPoint();
     }
 
     /**
@@ -102,9 +150,9 @@ abstract contract BaseAccount is IAccount {
      */
     function _payPrefund(uint256 missingAccountFunds) internal virtual {
         if (missingAccountFunds != 0) {
-            (bool success, ) = payable(msg.sender).call{
-                value: missingAccountFunds
-            }("");
+            (bool success,) = payable(msg.sender).call{
+                    value: missingAccountFunds
+                }("");
             (success);
             //ignore failure (its EntryPoint's job to verify, not account.)
         }

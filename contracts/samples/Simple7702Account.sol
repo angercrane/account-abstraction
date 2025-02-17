@@ -15,15 +15,9 @@ import "../core/BaseAccount.sol";
  */
 contract Simple7702Account is BaseAccount, IERC165, IERC1271, ERC1155Holder, ERC721Holder {
 
-    struct Call {
-        address target;
-        uint256 value;
-        bytes data;
-    }
-
     // temporary address of entryPoint v0.8
     function entryPoint() public pure override returns (IEntryPoint) {
-        return IEntryPoint(0x9dab3AEd4B71E1AF22550b28ebae79c955F7041e);
+        return IEntryPoint(0xc451a3f2c8cbD212747A939712E97DaE27789E2f);
     }
 
     /**
@@ -46,26 +40,12 @@ contract Simple7702Account is BaseAccount, IERC165, IERC1271, ERC1155Holder, ERC
         return ECDSA.recover(hash, signature) == address(this);
     }
 
-    function _requireFromSelfOrEntryPoint() internal view virtual {
+    function _requireForExecute() internal view virtual override {
         require(
             msg.sender == address(this) ||
             msg.sender == address(entryPoint()),
             "not from self or EntryPoint"
         );
-    }
-
-
-    function execute(Call[] calldata calls) external {
-        _requireFromSelfOrEntryPoint();
-
-        for (uint256 i = 0; i < calls.length; i++) {
-            Call calldata call = calls[i];
-            (bool ok, bytes memory ret) = call.target.call{value: call.value}(call.data);
-            if (!ok) {
-                // solhint-disable-next-line no-inline-assembly
-                assembly {revert(add(ret, 32), mload(ret))}
-            }
-        }
     }
 
     function supportsInterface(bytes4 id) public override(ERC1155Holder, IERC165) pure returns (bool) {
